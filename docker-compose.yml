@@ -1,0 +1,32 @@
+# ============================================================
+# Local Genius — Docker Compose
+# ============================================================
+# Usage: docker-compose up --build
+# ============================================================
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: local-genius-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+
+  local-genius:
+    build: .
+    container_name: local-genius-app
+    depends_on:
+      - ollama
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    network_mode: "service:ollama"
+    stdin_open: true
+    tty: true
+    volumes:
+      - ./chroma_db:/home/genius/app/chroma_db
+      - ./.env:/home/genius/app/.env:ro
+
+volumes:
+  ollama_data:

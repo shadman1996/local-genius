@@ -1,0 +1,43 @@
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Environment variables (contains secrets)
+.env
+
+# ChromaDB persistent storage
+chroma_db/
+
+# Safety monitor audit log
+safety_monitor.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local git binary (extracted without sudo)
+.local-git/
+
+# Docker
+docker-compose.override.yml
+
+# Pytest
+.pytest_cache/
+htmlcov/
+.coverage
