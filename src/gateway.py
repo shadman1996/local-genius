@@ -7,7 +7,7 @@ Handles two execution channels:
 1. **System commands** — Executes shell commands via subprocess with
    timeout and output capture.
 2. **MQTT** — Publishes/subscribes to an MQTT broker for hardware
-   control (GPIO, sensors, actuators via Home Assistant or OpenClaw).
+   control (GPIO, sensors, actuators, or Home Assistant integration).
 """
 
 import logging
