@@ -11,8 +11,12 @@ Handles two execution channels:
 """
 
 import logging
+import os
 import subprocess
 import threading
+import urllib.request
+import urllib.parse
+import json
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -157,6 +161,62 @@ class Gateway:
             return StatusReport(success=True, output=f"Successfully updated {path}", channel="file")
         except Exception as exc:
             return StatusReport(success=False, output="", error=str(exc), channel="file")
+
+    def list_directory(self, path: str) -> StatusReport:
+        """List contents of a directory."""
+        try:
+            entries = os.listdir(path)
+            lines = []
+            for entry in entries:
+                full_path = os.path.join(path, entry)
+                if os.path.isdir(full_path):
+                    lines.append(f"[DIR]  {entry}/")
+                else:
+                    size = os.path.getsize(full_path)
+                    lines.append(f"[FILE] {entry} ({size} bytes)")
+            return StatusReport(success=True, output="\n".join(lines), channel="file")
+        except Exception as exc:
+            return StatusReport(success=False, output="", error=str(exc), channel="file")
+
+    # ------------------------------------------------------------------
+    # Web & Background Tasks
+    # ------------------------------------------------------------------
+
+    def web_search(self, query: str) -> StatusReport:
+        """Search Wikipedia for information."""
+        try:
+            encoded_query = urllib.parse.quote(query)
+            url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={encoded_query}&utf8=&format=json"
+            req = urllib.request.Request(url, headers={'User-Agent': 'LocalGenius/1.0'})
+            with urllib.request.urlopen(req, timeout=10) as response:
+                data = json.loads(response.read().decode())
+                
+            results = data.get('query', {}).get('search', [])
+            if not results:
+                return StatusReport(success=False, output="", error="No Wikipedia results found.", channel="web")
+                
+            snippets = []
+            for r in results[:3]:
+                clean_snippet = r['snippet'].replace('<span class="searchmatch">', '').replace('</span>', '').replace('&quot;', '"')
+                snippets.append(f"Title: {r['title']}\nSnippet: {clean_snippet}\n")
+                
+            return StatusReport(success=True, output="\n".join(snippets), channel="web")
+        except Exception as exc:
+            return StatusReport(success=False, output="", error=str(exc), channel="web")
+
+    def run_background(self, command: str) -> StatusReport:
+        """Run a command in the background without blocking."""
+        try:
+            process = subprocess.Popen(
+                command,
+                shell=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                cwd=None
+            )
+            return StatusReport(success=True, output=f"Background process started. PID: {process.pid}", channel="system")
+        except Exception as exc:
+            return StatusReport(success=False, output="", error=str(exc), channel="system")
 
     # ------------------------------------------------------------------
     # MQTT Hardware Gateway

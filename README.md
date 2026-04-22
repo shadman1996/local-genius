@@ -1,141 +1,95 @@
 # 🧠 Local Genius
 
-> A 100% free, local-first agentic AI system with safety monitoring, persistent memory, and optional hardware control.
+**Local Genius** is a 100% free, local-first agentic AI system designed to operate autonomously on your hardware. 
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-
----
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                        USER INPUT                           │
-└──────────────────────────┬──────────────────────────────────┘
-                           │
-                           ▼
-┌──────────────────────────────────────────────────────────────┐
-│  🧠 THE BRAIN  (brain.py)                                    │
-│  Ollama + Llama 3.2 — Local LLM inference                   │
-│  System Prompt: "Core-OS" autonomous governor                │
-│  Output: Structured JSON Action Blocks                       │
-└──────────────────────────┬──────────────────────────────────┘
-                           │
-                           ▼
-┌──────────────────────────────────────────────────────────────┐
-│  ⚙️  THE LOGIC  (orchestrator.py)                             │
-│  Agentic loop with retry + feedback                          │
-│  Brain → Safety Check → Execute → Feedback → Brain           │
-│  Memory integration via ChromaDB                             │
-└──────────┬───────────────────────────────────┬──────────────┘
-           │                                   │
-           ▼                                   ▼
-┌─────────────────────┐          ┌──────────────────────────┐
-│  🛡️ SAFETY MONITOR   │          │  💾 MEMORY  (memory.py)   │
-│  (safety_monitor.py) │          │  ChromaDB vector store    │
-│  Regex blacklist     │          │  "What did I do?"         │
-│  Audit logging       │          │  Semantic recall          │
-└──────────┬──────────┘          └──────────────────────────┘
-           │
-           ▼
-┌──────────────────────────────────────────────────────────────┐
-│  🌐 THE GATEWAY  (gateway.py)                                │
-│  subprocess.run() for system commands                        │
-│  MQTT publish/subscribe for hardware (optional)              │
-│  Returns StatusReport → feeds back to Orchestrator           │
-└──────────────────────────────────────────────────────────────┘
-```
+It functions as an advanced system governor (acting similarly to Antigravity) that features a conversational loop, native file editing tools, real-time safety monitoring, semantic memory, and internet/IoT access.
 
 ---
 
-## Quickstart
+## 🚀 Quick Start for Developers
 
-### Prerequisites
+Follow these instructions to clone, setup, and run the agent on your local machine or GPU server.
 
-- **Python 3.10+**
-- **Ollama** — [Install from ollama.com](https://ollama.com)
+### 1. Prerequisites
+You need **Python 3.10+** and **Ollama** installed on your machine.
 
-### Setup
-
+**Install Ollama (Linux):**
 ```bash
-# 1. Clone the repository
-git clone https://github.com/YOUR_USERNAME/local-genius.git
-cd local-genius
+curl -fsSL https://ollama.com/install.sh | sh
+```
 
-# 2. Install everything (creates venv, installs deps, copies .env)
+**Pull the Core Model:**
+We recommend the `qwen2.5-coder` family for optimal coding agent performance.
+- For CPU-only machines: `ollama pull qwen2.5-coder:7b`
+- For GPU machines (Senior Dev Tier): `ollama pull qwen2.5-coder:32b`
+
+Make sure the Ollama server is running in the background:
+```bash
+ollama serve
+```
+
+### 2. Clone the Repository
+```bash
+git clone https://github.com/shadman1996/local-genius.git
+cd local-genius
+```
+
+### 3. Setup the Environment
+The project uses standard Python `venv` and a `Makefile` for convenience.
+```bash
+# Create virtual environment and install dependencies
 make setup
 
-# 3. Pull the LLM model
-ollama pull llama3.2:3b
+# Copy the environment template
+cp .env.example .env
+```
 
-# 4. Start Ollama (if not already running)
-ollama serve &
+*Note: Open `.env` and verify `OLLAMA_MODEL` matches the model you pulled in Step 1.*
 
-# 5. Run the agent
+### 4. Run the Agent
+To start the interactive conversational REPL:
+```bash
 make run
 ```
+*(Alternatively: `source venv/bin/activate && python -m src.main --interactive`)*
 
-### One-Shot Mode
+---
 
-```bash
-make run-goal GOAL="List all Python files in the current directory"
+## 🛠️ Features & Tools
+
+### Conversational Memory
+The agent maintains continuous context. You can attach files to its brain before asking a question:
+```text
+🗣️  You > /attach src/main.py
+📎 Attached file: src/main.py (will be sent with next prompt)
+
+🗣️  You > Refactor the interactive loop in this file.
 ```
 
----
+### Native Tools (Antigravity Parity)
+The agent operates via a secure Gateway with access to the following tools:
+1. **File Operations:** `read_file`, `write_file`, `replace_file_content` (replaces exact text blocks), `list_directory`.
+2. **System Control:** `bash_command` (synchronous execution), `run_background` (asynchronous servers/scripts).
+3. **Web Search:** `web_search` (queries Wikipedia for instant context).
+4. **IoT Control:** `mqtt_publish` (can control Home Assistant or GPIO bridges).
 
-## Configuration
-
-Copy `.env.example` to `.env` and edit:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `OLLAMA_MODEL` | `llama3.2:3b` | Which Ollama model to use |
-| `OLLAMA_HOST` | `http://localhost:11434` | Ollama API endpoint |
-| `CHROMA_DB_PATH` | `./chroma_db` | Where to persist vector memory |
-| `MAX_RETRIES` | `3` | How many times the agent retries on failure |
-| `MQTT_ENABLED` | `false` | Enable MQTT hardware gateway |
-| `MQTT_BROKER` | `localhost` | MQTT broker address |
-| `MQTT_PORT` | `1883` | MQTT broker port |
+### Safety Monitor & Feedback Loop
+All `bash_command` executions are intercepted by the **Safety Monitor** using regex patterns (preventing `rm -rf /`, fork bombs, etc.). 
+If a command fails or is blocked, the Orchestrator initiates a **Self-Correction Feedback Loop**, feeding the error back to the LLM so it can try a safer alternative.
 
 ---
 
-## Safety
+## 🧪 Testing
 
-Local Genius includes a **Safety Monitor** that intercepts every command before execution:
-
-- 🚫 Blocks destructive patterns (`rm -rf /`, `mkfs`, `dd`, fork bombs)
-- 📝 Logs every command (approved and blocked) to `safety_monitor.log`
-- 🔄 Feeds rejection reasons back to the LLM so it self-corrects
-- 🛑 Configurable: add your own patterns
-
-> ⚠️ **WARNING:** This is a software safety layer. For production use with real hardware,
-> always add a physical kill-switch or hardware interrupter.
-
----
-
-## Development
+The project uses `pytest` and maintains over 60 tests covering the orchestrator loop, safety monitor, and ChromaDB memory.
 
 ```bash
-make test       # Run test suite
-make test-cov   # Run tests with coverage
-make lint       # Lint with ruff
-make lint-fix   # Auto-fix lint issues
-make clean      # Remove venv and caches
+make test
 ```
 
----
-
-## Docker (Optional)
-
-```bash
-docker-compose up --build
-```
-
-This starts both Ollama and the Local Genius agent in containers.
-
----
-
-## License
-
-MIT — see [LICENSE](LICENSE).
+## 📜 Architecture Overview
+- **Brain (`src/brain.py`)**: Ollama SDK wrapper.
+- **Orchestrator (`src/orchestrator.py`)**: The central chat loop that parses JSON actions from the Brain and routes them.
+- **Gateway (`src/gateway.py`)**: The bridge that executes tools (file reading, bash, web search, MQTT).
+- **Safety Monitor (`src/safety_monitor.py`)**: Regex-based gatekeeper for bash commands.
+- **Memory (`src/memory.py`)**: ChromaDB vector store that remembers past actions and blocks.

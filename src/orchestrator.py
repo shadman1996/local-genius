@@ -173,13 +173,19 @@ class Orchestrator:
                     current_prompt = f"Command FAILED:\n{feedback}\n\nAnalyze the error and try a different approach."
                 continue
                 
-            # 5. Handle File Operations
-            if action in ["read_file", "write_file", "replace_file_content"]:
-                print(f"📄 File Op: {action}")
+            # 5. Handle File, Directory, Web, and Background Operations
+            if action in ["read_file", "write_file", "replace_file_content", "list_directory", "web_search", "run_background"]:
+                print(f"🔧 Tool Execution: {action}")
                 
                 try:
                     if action == "read_file":
                         report = self.gateway.read_file(command)
+                    elif action == "list_directory":
+                        report = self.gateway.list_directory(command)
+                    elif action == "web_search":
+                        report = self.gateway.web_search(command)
+                    elif action == "run_background":
+                        report = self.gateway.run_background(command)
                     else:
                         payload = json.loads(command)
                         path = payload.get("path", "")
@@ -191,9 +197,9 @@ class Orchestrator:
                             replacement = payload.get("replacement", "")
                             report = self.gateway.replace_file_content(path, target, replacement)
                 except json.JSONDecodeError:
-                    report = StatusReport(success=False, output="", error=f"Invalid JSON in command payload for {action}", channel="file")
+                    report = StatusReport(success=False, output="", error=f"Invalid JSON in command payload for {action}", channel="tool")
                 except AttributeError:
-                    report = StatusReport(success=False, output="", error=f"Missing required fields in payload for {action}", channel="file")
+                    report = StatusReport(success=False, output="", error=f"Missing required fields in payload for {action}", channel="tool")
                 
                 feedback = report.to_feedback()
                 print(feedback)
@@ -201,7 +207,7 @@ class Orchestrator:
                 steps.append(step_record)
                 
                 self.memory.store_action(
-                    command=f"{action} on {command}",
+                    command=f"{action} on {command[:50]}...",
                     result=report.output if report.success else report.error,
                 )
                 
