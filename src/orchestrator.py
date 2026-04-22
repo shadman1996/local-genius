@@ -1,13 +1,8 @@
 """
 Local Genius — Orchestrator
 
-The central agentic loop that ties everything together:
-
-    User Goal → Brain (LLM) → Safety Monitor → Gateway (Execute) → Feedback → Brain
-
-If a command is blocked or fails, the Orchestrator feeds the error back
-into the Brain's context so it can self-correct. Memory is updated at
-every step for persistent state.
+The central agentic loop that ties everything together.
+Now supports continuous conversational loops and native file tools.
 """
 
 import json
@@ -51,30 +46,43 @@ class Orchestrator:
         )
 
     # ------------------------------------------------------------------
-    # Main Loop
+    # Conversational Loop
     # ------------------------------------------------------------------
 
-    def execute_goal(self, user_goal: str) -> dict[str, Any]:
+    def chat_turn(self, user_input: str, context_files: list[str] = None) -> dict[str, Any]:
         """
-        Execute a user goal through the full agentic loop.
-
-        Returns a summary dict with:
-            - goal: The original user goal
-            - steps: List of step dicts (thought, action, command, result)
-            - final_status: "completed", "blocked", "max_retries", or "error"
-            - total_steps: Number of loop iterations
+        Execute a single conversation turn through the agentic loop.
+        Loops until the agent returns the 'reply' action.
         """
         logger.info("=" * 60)
-        logger.info("NEW GOAL: %s", user_goal)
+        logger.info("NEW INPUT: %s", user_input)
         logger.info("=" * 60)
 
         steps: list[dict[str, Any]] = []
 
-        # Inject relevant memory context
-        memory_context = self._build_memory_context(user_goal)
-        initial_prompt = self._build_initial_prompt(user_goal, memory_context)
-
-        current_prompt = initial_prompt
+        # Prepare initial prompt
+        prompt_parts = []
+        
+        # 1. Attach context files if any
+        if context_files:
+            prompt_parts.append("The user has attached the following files for context:")
+            for cf in context_files:
+                report = self.gateway.read_file(cf)
+                if report.success:
+                    prompt_parts.append(f"--- FILE: {cf} ---\n{report.output}\n--- END {cf} ---")
+                else:
+                    prompt_parts.append(f"--- FILE: {cf} ---\n(Failed to read: {report.error})\n--- END {cf} ---")
+            prompt_parts.append("") # newline
+            
+        # 2. Inject memory context
+        memory_context = self._build_memory_context(user_input)
+        if memory_context:
+            prompt_parts.append(memory_context)
+            
+        # 3. Add user input
+        prompt_parts.append(f"USER: {user_input}")
+        
+        current_prompt = "\n".join(prompt_parts)
 
         for step_num in range(1, self.max_retries + 1):
             logger.info("--- Step %d/%d ---", step_num, self.max_retries)
@@ -82,12 +90,12 @@ class Orchestrator:
             # 1. Ask the Brain
             action_block = self.brain.think(current_prompt)
             thought = action_block.get("thought", "")
-            action = action_block.get("action", "done")
+            action = action_block.get("action", "reply")
             command = action_block.get("command", "")
 
             print(f"\n💭 Thought: {thought}")
             print(f"🎬 Action:  {action}")
-            if command:
+            if command and action != "reply":
                 print(f"📝 Command: {command}")
 
             step_record = {
@@ -110,21 +118,21 @@ class Orchestrator:
                 )
                 continue
 
-            # 3. Handle "done" action
-            if action == "done":
-                print("✅ Task concluded by the Brain.")
-                step_record["result"] = "Task completed"
+            # 3. Handle "reply" action (Goal / Turn Concluded)
+            if action == "reply" or action == "done": # support legacy "done"
+                print(f"💬 Reply: {command}")
+                step_record["result"] = "Turn completed"
                 steps.append(step_record)
 
                 # Store in memory
                 self.memory.store_action(
-                    command=f"GOAL: {user_goal}",
-                    result=f"Completed in {step_num} steps. Final thought: {thought}",
+                    command=f"USER: {user_input}",
+                    result=f"Completed in {step_num} steps. Reply: {command}",
                 )
-                return self._summary(user_goal, steps, "completed")
+                return self._summary(steps, "completed", command)
 
-            # 4. Safety check
-            if action == "bash_command" and command:
+            # 4. Handle System Commands
+            if action == "bash_command":
                 evaluation = self.safety.evaluate(command)
 
                 if not evaluation.is_safe:
@@ -132,33 +140,27 @@ class Orchestrator:
                     step_record["result"] = evaluation.reason
                     steps.append(step_record)
 
-                    # Store blocked action in memory
                     self.memory.store_action(
                         command=command,
                         result=evaluation.reason,
                         was_blocked=True,
                     )
 
-                    # Feed error back to LLM
                     current_prompt = (
-                        f"Your previous command `{command}` was BLOCKED.\n"
+                        f"Your bash_command `{command}` was BLOCKED.\n"
                         f"Reason: {evaluation.reason}\n\n"
-                        f"Analyze this error. Find a SAFE alternative approach "
-                        f"to achieve the goal: {user_goal}\n"
-                        f"Respond with a corrected JSON Action Block."
+                        f"Analyze this error. Find a SAFE alternative approach."
                     )
                     continue
 
-                # 5. Execute the command via Gateway
-                print(f"⚡ Executing: {command}")
-                report: StatusReport = self.gateway.execute_command(command)
+                print(f"⚡ Executing Bash: {command}")
+                report = self.gateway.execute_command(command)
                 feedback = report.to_feedback()
 
                 print(feedback)
                 step_record["result"] = feedback
                 steps.append(step_record)
 
-                # Store in memory
                 self.memory.store_action(
                     command=command,
                     result=report.output if report.success else report.error,
@@ -166,21 +168,44 @@ class Orchestrator:
                 )
 
                 if report.success:
-                    # Ask Brain if the goal is achieved or if more steps needed
-                    current_prompt = (
-                        f"Command executed successfully.\n{feedback}\n\n"
-                        f"Original goal: {user_goal}\n"
-                        f"Is the goal fully achieved? If yes, respond with "
-                        f'action="done". If more steps are needed, provide '
-                        f"the next command."
-                    )
+                    current_prompt = f"Command succeeded:\n{feedback}\n\nWhat is your next action?"
                 else:
-                    # Feed failure back
-                    current_prompt = (
-                        f"Command `{command}` FAILED.\n{feedback}\n\n"
-                        f"Analyze the error and try a different approach "
-                        f"to achieve: {user_goal}"
-                    )
+                    current_prompt = f"Command FAILED:\n{feedback}\n\nAnalyze the error and try a different approach."
+                continue
+                
+            # 5. Handle File Operations
+            if action in ["read_file", "write_file", "replace_file_content"]:
+                print(f"📄 File Op: {action}")
+                
+                try:
+                    if action == "read_file":
+                        report = self.gateway.read_file(command)
+                    else:
+                        payload = json.loads(command)
+                        path = payload.get("path", "")
+                        if action == "write_file":
+                            content = payload.get("content", "")
+                            report = self.gateway.write_file(path, content)
+                        elif action == "replace_file_content":
+                            target = payload.get("target", "")
+                            replacement = payload.get("replacement", "")
+                            report = self.gateway.replace_file_content(path, target, replacement)
+                except json.JSONDecodeError:
+                    report = StatusReport(success=False, output="", error=f"Invalid JSON in command payload for {action}", channel="file")
+                except AttributeError:
+                    report = StatusReport(success=False, output="", error=f"Missing required fields in payload for {action}", channel="file")
+                
+                feedback = report.to_feedback()
+                print(feedback)
+                step_record["result"] = feedback
+                steps.append(step_record)
+                
+                self.memory.store_action(
+                    command=f"{action} on {command}",
+                    result=report.output if report.success else report.error,
+                )
+                
+                current_prompt = f"{action} result:\n{feedback}\n\nWhat is your next action?"
                 continue
 
             # 6. Handle MQTT actions
@@ -204,11 +229,7 @@ class Orchestrator:
                     result=report.output if report.success else report.error,
                 )
 
-                current_prompt = (
-                    f"MQTT publish result:\n{feedback}\n\n"
-                    f"Original goal: {user_goal}\n"
-                    f"Is the goal achieved? Respond accordingly."
-                )
+                current_prompt = f"MQTT publish result:\n{feedback}\n\nWhat is your next action?"
                 continue
 
             # Fallback — unknown action
@@ -217,12 +238,12 @@ class Orchestrator:
             steps.append(step_record)
             current_prompt = (
                 f'Unknown action "{action}". Valid actions are: '
-                f'"bash_command", "mqtt_publish", "done". Try again.'
+                f'"bash_command", "read_file", "write_file", "replace_file_content", "mqtt_publish", "reply". Try again.'
             )
 
         # Exhausted retries
         print(f"\n⛔ Max retries ({self.max_retries}) reached.")
-        return self._summary(user_goal, steps, "max_retries")
+        return self._summary(steps, "max_retries", "I reached the maximum number of internal steps before I could reply.")
 
     # ------------------------------------------------------------------
     # Context Builders
@@ -243,25 +264,14 @@ class Orchestrator:
         return "\n".join(lines)
 
     @staticmethod
-    def _build_initial_prompt(goal: str, memory_context: str) -> str:
-        """Build the initial prompt for the Brain."""
-        parts = [f"User Goal: {goal}"]
-        if memory_context:
-            parts.append(f"\n{memory_context}")
-        parts.append(
-            "\nProvide your JSON Action Block to begin working on this goal."
-        )
-        return "\n".join(parts)
-
-    @staticmethod
     def _summary(
-        goal: str, steps: list[dict[str, Any]], status: str
+        steps: list[dict[str, Any]], status: str, reply_text: str
     ) -> dict[str, Any]:
         return {
-            "goal": goal,
             "steps": steps,
             "final_status": status,
             "total_steps": len(steps),
+            "reply": reply_text
         }
 
     # ------------------------------------------------------------------

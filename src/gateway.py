@@ -115,6 +115,50 @@ class Gateway:
         return report
 
     # ------------------------------------------------------------------
+    # File Operations
+    # ------------------------------------------------------------------
+
+    def read_file(self, path: str) -> StatusReport:
+        """Read a file's contents."""
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                content = f.read()
+            return StatusReport(success=True, output=content, channel="file")
+        except Exception as exc:
+            return StatusReport(success=False, output="", error=str(exc), channel="file")
+
+    def write_file(self, path: str, content: str) -> StatusReport:
+        """Create or overwrite a file."""
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(content)
+            return StatusReport(success=True, output=f"Successfully wrote to {path}", channel="file")
+        except Exception as exc:
+            return StatusReport(success=False, output="", error=str(exc), channel="file")
+
+    def replace_file_content(self, path: str, target: str, replacement: str) -> StatusReport:
+        """Replace an exact string in a file."""
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                content = f.read()
+            
+            if target not in content:
+                return StatusReport(
+                    success=False, 
+                    output="", 
+                    error=f"Target string not found in {path}. It must match exactly including whitespace.", 
+                    channel="file"
+                )
+                
+            new_content = content.replace(target, replacement)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(new_content)
+                
+            return StatusReport(success=True, output=f"Successfully updated {path}", channel="file")
+        except Exception as exc:
+            return StatusReport(success=False, output="", error=str(exc), channel="file")
+
+    # ------------------------------------------------------------------
     # MQTT Hardware Gateway
     # ------------------------------------------------------------------
 

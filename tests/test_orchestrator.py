@@ -73,11 +73,11 @@ class TestHappyPath:
         """Brain immediately returns done — single-step completion."""
         mock_brain.think.return_value = {
             "thought": "Goal is already achieved.",
-            "action": "done",
-            "command": "",
+            "action": "reply",
+            "command": "Done.",
         }
 
-        result = orchestrator.execute_goal("Say hello")
+        result = orchestrator.chat_turn("Say hello")
 
         assert result["final_status"] == "completed"
         assert result["total_steps"] == 1
@@ -93,12 +93,12 @@ class TestHappyPath:
             },
             {
                 "thought": "Files listed successfully. Goal achieved.",
-                "action": "done",
-                "command": "",
+                "action": "reply",
+                "command": "Done.",
             },
         ]
 
-        result = orchestrator.execute_goal("List files")
+        result = orchestrator.chat_turn("List files")
 
         assert result["final_status"] == "completed"
         assert result["total_steps"] == 2
@@ -133,12 +133,12 @@ class TestFeedbackLoop:
             # Step 3: Done
             {
                 "thought": "Goal achieved.",
-                "action": "done",
-                "command": "",
+                "action": "reply",
+                "command": "Done.",
             },
         ]
 
-        result = orchestrator.execute_goal("Clean up temporary files")
+        result = orchestrator.chat_turn("Clean up temporary files")
 
         assert result["final_status"] == "completed"
         assert result["total_steps"] == 3
@@ -156,7 +156,7 @@ class TestFeedbackLoop:
             "command": "rm -rf /",
         }
 
-        result = orchestrator.execute_goal("Delete everything")
+        result = orchestrator.chat_turn("Delete everything")
 
         assert result["final_status"] == "max_retries"
         assert result["total_steps"] == 3  # max_retries = 3
@@ -184,12 +184,12 @@ class TestErrorHandling:
             # Step 2: Corrected
             {
                 "thought": "Now responding correctly.",
-                "action": "done",
-                "command": "",
+                "action": "reply",
+                "command": "Done.",
             },
         ]
 
-        result = orchestrator.execute_goal("Do something")
+        result = orchestrator.chat_turn("Do something")
         assert result["final_status"] == "completed"
         assert result["total_steps"] == 2
 
@@ -213,12 +213,12 @@ class TestErrorHandling:
             },
             {
                 "thought": "Got the hostname. Done.",
-                "action": "done",
-                "command": "",
+                "action": "reply",
+                "command": "Done.",
             },
         ]
 
-        result = orchestrator.execute_goal("Get system info")
+        result = orchestrator.chat_turn("Get system info")
         assert result["final_status"] == "completed"
 
 
@@ -233,10 +233,10 @@ class TestMemoryIntegration:
         """Blocked commands should be recorded in memory."""
         mock_brain.think.side_effect = [
             {"thought": "Deleting root.", "action": "bash_command", "command": "rm -rf /"},
-            {"thought": "Done.", "action": "done", "command": ""},
+            {"thought": "Done.", "action": "reply", "command": "Done."},
         ]
 
-        orchestrator.execute_goal("Clean up")
+        orchestrator.chat_turn("Clean up")
 
         assert tmp_memory.total_actions >= 1
         recent = tmp_memory.recall_recent(n=5)
@@ -249,9 +249,9 @@ class TestMemoryIntegration:
         """Successful commands should be recorded in memory."""
         mock_brain.think.side_effect = [
             {"thought": "Listing files.", "action": "bash_command", "command": "ls"},
-            {"thought": "Done.", "action": "done", "command": ""},
+            {"thought": "Done.", "action": "reply", "command": "Done."},
         ]
 
-        orchestrator.execute_goal("List files")
+        orchestrator.chat_turn("List files")
 
         assert tmp_memory.total_actions >= 1

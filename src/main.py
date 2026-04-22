@@ -63,9 +63,11 @@ def interactive_mode(orchestrator: Orchestrator) -> None:
     print_banner()
     print()
 
+    context_files = []
+
     while True:
         try:
-            user_input = input("🎯 Goal > ").strip()
+            user_input = input("🗣️  You > ").strip()
         except (EOFError, KeyboardInterrupt):
             print("\n\n👋 Goodbye!")
             break
@@ -87,17 +89,23 @@ def interactive_mode(orchestrator: Orchestrator) -> None:
 
         if user_input.lower() == "clear":
             orchestrator.brain.reset()
-            print("🧹 Conversation history cleared.\n")
+            context_files.clear()
+            print("🧹 Conversation history and attachments cleared.\n")
             continue
 
-        # Execute the goal
+        if user_input.lower().startswith("/attach "):
+            filepath = user_input.split(" ", 1)[1].strip()
+            context_files.append(filepath)
+            print(f"📎 Attached file: {filepath} (will be sent with next prompt)\n")
+            continue
+
+        # Execute the turn
         print(f"\n{'─' * 60}")
-        result = orchestrator.execute_goal(user_input)
+        result = orchestrator.chat_turn(user_input, context_files=context_files)
         print(f"{'─' * 60}")
-        print(
-            f"📊 Result: {result['final_status']} "
-            f"({result['total_steps']} step(s))\n"
-        )
+        
+        # Clear attachments after they've been used in a turn
+        context_files.clear()
 
 
 def _show_memory(memory: Memory) -> None:
@@ -140,7 +148,7 @@ def oneshot_mode(orchestrator: Orchestrator, goal: str) -> None:
     """Execute a single goal and exit."""
     print(f"🎯 Goal: {goal}")
     print(f"{'─' * 60}")
-    result = orchestrator.execute_goal(goal)
+    result = orchestrator.chat_turn(goal)
     print(f"{'─' * 60}")
     print(
         f"📊 Result: {result['final_status']} "
